@@ -33,7 +33,7 @@ print_welcome_page() {
 }
 
 ########################
-# Print the welcome page for a Bitnami Docker image
+# Print the welcome page for a container image maintained in this fork
 # Globals:
 #   BITNAMI_APP_NAME
 # Arguments:
@@ -42,12 +42,10 @@ print_welcome_page() {
 #   None
 #########################
 print_image_welcome_page() {
-    local github_url="https://github.com/bitnami/containers"
+    local github_url="https://github.com/edijon-ugofresh/containers"
 
     info ""
-    info "${BOLD}Welcome to the Bitnami ${BITNAMI_APP_NAME} container${RESET}"
-    info "Subscribe to project updates by watching ${BOLD}${github_url}${RESET}"
-    info "${YELLOW}NOTICE: Starting August 28th, 2025, only a limited subset of images/charts will remain available for free. Backup will be available for some time at the 'Bitnami Legacy' repository. More info at https://github.com/bitnami/containers/issues/83267${RESET}"
+    info "${BOLD}Welcome to the ${BITNAMI_APP_NAME} container${RESET}"
+    info "Container sources and maintenance notes live at ${BOLD}${github_url}${RESET}"
     info ""
 }
-

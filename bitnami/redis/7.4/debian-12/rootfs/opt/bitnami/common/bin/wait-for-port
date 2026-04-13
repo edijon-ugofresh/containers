@@ -1,0 +1,82 @@
+#!/bin/bash
+# SPDX-License-Identifier: APACHE-2.0
+
+set -o errexit
+set -o nounset
+set -o pipefail
+
+host="127.0.0.1"
+port=""
+state="listening"
+timeout_seconds=60
+
+usage() {
+    cat <<'EOF'
+Usage: wait-for-port [--host HOST] [--timeout SECONDS] [--state listening|free] PORT
+EOF
+}
+
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+    --host)
+        host="${2:?missing value for --host}"
+        shift 2
+        ;;
+    --timeout)
+        timeout_seconds="${2:?missing value for --timeout}"
+        shift 2
+        ;;
+    --timeout=*)
+        timeout_seconds="${1#*=}"
+        shift
+        ;;
+    --state)
+        state="${2:?missing value for --state}"
+        shift 2
+        ;;
+    --state=*)
+        state="${1#*=}"
+        shift
+        ;;
+    --help|-h)
+        usage
+        exit 0
+        ;;
+    -*)
+        echo "Unsupported option: $1" >&2
+        usage >&2
+        exit 1
+        ;;
+    *)
+        port="$1"
+        shift
+        ;;
+    esac
+done
+
+if [[ -z "${port}" ]]; then
+    usage >&2
+    exit 1
+fi
+
+if [[ "${state}" != "listening" && "${state}" != "free" ]]; then
+    echo "Unsupported state: ${state}" >&2
+    exit 1
+fi
+
+is_port_reachable() {
+    bash -c "exec 3<>/dev/tcp/${host}/${port}" >/dev/null 2>&1
+}
+
+deadline=$((SECONDS + timeout_seconds))
+while (( SECONDS <= deadline )); do
+    if is_port_reachable; then
+        [[ "${state}" == "listening" ]] && exit 0
+    else
+        [[ "${state}" == "free" ]] && exit 0
+    fi
+    sleep 1
+done
+
+echo "Timed out waiting for ${host}:${port} to become ${state}" >&2
+exit 1

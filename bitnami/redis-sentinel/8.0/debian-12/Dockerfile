@@ -1,55 +1,61 @@
 # Copyright Broadcom, Inc. All Rights Reserved.
 # SPDX-License-Identifier: APACHE-2.0
 
-FROM docker.io/bitnami/minideb:bookworm
+FROM docker.io/library/debian:12-slim AS redis-sentinel-builder
 
-ARG DOWNLOADS_URL="downloads.bitnami.com/files/stacksmith"
-ARG TARGETARCH
+ARG REDIS_VERSION="8.0.3"
+ARG REDIS_SHA256="33f37290b00b14e9a884dd4dcba335febd63ea16c51609d34fa41e031ad587df"
+ARG REDIS_DOWNLOAD_URL="https://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz"
 
-LABEL com.vmware.cp.artifact.flavor="sha256:c50c90cfd9d12b445b011e6ad529f1ad3daea45c26d20b00732fae3cd71f6a83" \
-      org.opencontainers.image.base.name="docker.io/bitnami/minideb:bookworm" \
-      org.opencontainers.image.created="2025-07-17T03:18:58Z" \
-      org.opencontainers.image.description="Application packaged by Broadcom, Inc." \
-      org.opencontainers.image.documentation="https://github.com/bitnami/containers/tree/main/bitnami/redis-sentinel/README.md" \
-      org.opencontainers.image.source="https://github.com/bitnami/containers/tree/main/bitnami/redis-sentinel" \
+COPY prebuildfs /
+SHELL ["/bin/bash", "-o", "errexit", "-o", "nounset", "-o", "pipefail", "-c"]
+RUN install_packages build-essential ca-certificates curl libssl-dev pkg-config
+RUN mkdir -p /tmp/redis-source /opt/bitnami/redis-sentinel/bin /opt/bitnami/redis-sentinel/etc && \
+    curl -fsSL "${REDIS_DOWNLOAD_URL}" -o /tmp/redis.tar.gz && \
+    echo "${REDIS_SHA256}  /tmp/redis.tar.gz" | sha256sum -c - && \
+    tar -xzf /tmp/redis.tar.gz -C /tmp/redis-source --strip-components=1 && \
+    make -C /tmp/redis-source BUILD_TLS=yes -j"$(nproc)" && \
+    install -m 0755 /tmp/redis-source/src/redis-cli /opt/bitnami/redis-sentinel/bin/redis-cli && \
+    install -m 0755 /tmp/redis-source/src/redis-server /opt/bitnami/redis-sentinel/bin/redis-server && \
+    install -m 0755 /tmp/redis-source/src/redis-benchmark /opt/bitnami/redis-sentinel/bin/redis-benchmark && \
+    install -m 0755 /tmp/redis-source/src/redis-check-aof /opt/bitnami/redis-sentinel/bin/redis-check-aof && \
+    install -m 0755 /tmp/redis-source/src/redis-check-rdb /opt/bitnami/redis-sentinel/bin/redis-check-rdb && \
+    if [[ -f /tmp/redis-source/src/redis-sentinel ]]; then \
+        install -m 0755 /tmp/redis-source/src/redis-sentinel /opt/bitnami/redis-sentinel/bin/redis-sentinel; \
+    else \
+        ln -s redis-server /opt/bitnami/redis-sentinel/bin/redis-sentinel; \
+    fi && \
+    install -m 0644 /tmp/redis-source/sentinel.conf /opt/bitnami/redis-sentinel/etc/sentinel.conf && \
+    rm -rf /tmp/redis-source /tmp/redis.tar.gz
+
+FROM docker.io/library/debian:12-slim
+
+ARG REDIS_VERSION="8.0.3"
+
+LABEL org.opencontainers.image.base.name="docker.io/library/debian:12-slim" \
+      org.opencontainers.image.description="Redis Sentinel container image maintained from upstream Redis source releases." \
+      org.opencontainers.image.documentation="https://github.com/edijon-ugofresh/containers/tree/main/bitnami/redis-sentinel/README.md" \
+      org.opencontainers.image.ref.name="${REDIS_VERSION}-debian-12" \
+      org.opencontainers.image.source="https://github.com/edijon-ugofresh/containers/tree/main/bitnami/redis-sentinel" \
       org.opencontainers.image.title="redis-sentinel" \
-      org.opencontainers.image.vendor="Broadcom, Inc." \
-      org.opencontainers.image.version="8.0.3"
+      org.opencontainers.image.vendor="edijon-ugofresh" \
+      org.opencontainers.image.version="${REDIS_VERSION}"
 
 ENV HOME="/" \
-    OS_ARCH="${TARGETARCH:-amd64}" \
-    OS_FLAVOUR="debian-12" \
-    OS_NAME="linux" \
     PATH="/opt/bitnami/redis-sentinel/bin:$PATH"
 
 COPY prebuildfs /
 SHELL ["/bin/bash", "-o", "errexit", "-o", "nounset", "-o", "pipefail", "-c"]
-# Install required system packages and dependencies
-RUN install_packages ca-certificates curl libgcc-s1 libssl3 libstdc++6 openssl procps
-RUN --mount=type=secret,id=downloads_url,env=SECRET_DOWNLOADS_URL \
-    DOWNLOADS_URL=${SECRET_DOWNLOADS_URL:-${DOWNLOADS_URL}} ; \
-    mkdir -p /tmp/bitnami/pkg/cache/ ; cd /tmp/bitnami/pkg/cache/ || exit 1 ; \
-    COMPONENTS=( \
-      "redis-sentinel-8.0.3-1-linux-${OS_ARCH}-debian-12" \
-    ) ; \
-    for COMPONENT in "${COMPONENTS[@]}"; do \
-      if [ ! -f "${COMPONENT}.tar.gz" ]; then \
-        curl -SsLf "https://${DOWNLOADS_URL}/${COMPONENT}.tar.gz" -O ; \
-        curl -SsLf "https://${DOWNLOADS_URL}/${COMPONENT}.tar.gz.sha256" -O ; \
-      fi ; \
-      sha256sum -c "${COMPONENT}.tar.gz.sha256" ; \
-      tar -zxf "${COMPONENT}.tar.gz" -C /opt/bitnami --strip-components=2 --no-same-owner ; \
-      rm -rf "${COMPONENT}".tar.gz{,.sha256} ; \
-    done
+RUN install_packages ca-certificates libgcc-s1 libssl3 libstdc++6 openssl procps
+COPY --from=redis-sentinel-builder /opt/bitnami/redis-sentinel /opt/bitnami/redis-sentinel
 RUN apt-get update && apt-get upgrade -y && \
     apt-get clean && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 RUN chmod g+rwX /opt/bitnami
 RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
-RUN uninstall_packages curl
 
 COPY rootfs /
 RUN /opt/bitnami/scripts/redis-sentinel/postunpack.sh
-ENV APP_VERSION="8.0.3" \
+ENV APP_VERSION="${REDIS_VERSION}" \
     BITNAMI_APP_NAME="redis-sentinel"
 
 EXPOSE 26379

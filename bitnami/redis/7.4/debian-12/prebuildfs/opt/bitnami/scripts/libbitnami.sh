@@ -33,7 +33,7 @@ print_welcome_page() {
 }
 
 ########################
-# Print the welcome page for a Bitnami Docker image
+# Print the welcome page for a container image maintained in this fork
 # Globals:
 #   BITNAMI_APP_NAME
 # Arguments:
@@ -42,12 +42,10 @@ print_welcome_page() {
 #   None
 #########################
 print_image_welcome_page() {
-    local github_url="https://github.com/bitnami/containers"
+    local github_url="https://github.com/edijon-ugofresh/containers"
 
     info ""
-    info "${BOLD}Welcome to the Bitnami ${BITNAMI_APP_NAME} container${RESET}"
-    info "Subscribe to project updates by watching ${BOLD}${github_url}${RESET}"
-    info "Did you know there are enterprise versions of the Bitnami catalog? For enhanced secure software supply chain features, unlimited pulls from Docker, LTS support, or application customization, see Bitnami Premium or Tanzu Application Catalog. See https://www.arrow.com/globalecs/na/vendors/bitnami/ for more information."
+    info "${BOLD}Welcome to the ${BITNAMI_APP_NAME} container${RESET}"
+    info "Container sources and maintenance notes live at ${BOLD}${github_url}${RESET}"
     info ""
 }
-

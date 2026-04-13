@@ -1,47 +1,48 @@
 # Copyright Broadcom, Inc. All Rights Reserved.
 # SPDX-License-Identifier: APACHE-2.0
 
-FROM docker.io/bitnami/minideb:bookworm
+FROM docker.io/library/debian:12-slim AS redis-builder
 
-ARG DOWNLOADS_URL="downloads.bitnami.com/files/stacksmith"
-ARG TARGETARCH
-
-LABEL com.vmware.cp.artifact.flavor="sha256:c50c90cfd9d12b445b011e6ad529f1ad3daea45c26d20b00732fae3cd71f6a83" \
-      org.opencontainers.image.base.name="docker.io/bitnami/minideb:bookworm" \
-      org.opencontainers.image.created="2025-04-24T08:31:07Z" \
-      org.opencontainers.image.description="Application packaged by Broadcom, Inc." \
-      org.opencontainers.image.documentation="https://github.com/bitnami/containers/tree/main/bitnami/redis/README.md" \
-      org.opencontainers.image.ref.name="7.4.3-debian-12-r0" \
-      org.opencontainers.image.source="https://github.com/bitnami/containers/tree/main/bitnami/redis" \
-      org.opencontainers.image.title="redis" \
-      org.opencontainers.image.vendor="Broadcom, Inc." \
-      org.opencontainers.image.version="7.4.3"
-
-ENV HOME="/" \
-    OS_ARCH="${TARGETARCH:-amd64}" \
-    OS_FLAVOUR="debian-12" \
-    OS_NAME="linux"
+ARG REDIS_VERSION="7.4.3"
+ARG REDIS_SHA256="e1807d7c0f824f4c5450244ef50c1e596b8d09b35d03a83f4e018fb7316acf45"
+ARG REDIS_DOWNLOAD_URL="https://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz"
 
 COPY prebuildfs /
 SHELL ["/bin/bash", "-o", "errexit", "-o", "nounset", "-o", "pipefail", "-c"]
-# Install required system packages and dependencies
-RUN install_packages ca-certificates curl libgomp1 libssl3 procps
-RUN mkdir -p /tmp/bitnami/pkg/cache/ ; cd /tmp/bitnami/pkg/cache/ || exit 1 ; \
-    COMPONENTS=( \
-      "wait-for-port-1.0.8-15-linux-${OS_ARCH}-debian-12" \
-      "redis-7.4.3-0-linux-${OS_ARCH}-debian-12" \
-    ) ; \
-    for COMPONENT in "${COMPONENTS[@]}"; do \
-      if [ ! -f "${COMPONENT}.tar.gz" ]; then \
-        curl -SsLf "https://${DOWNLOADS_URL}/${COMPONENT}.tar.gz" -O ; \
-        curl -SsLf "https://${DOWNLOADS_URL}/${COMPONENT}.tar.gz.sha256" -O ; \
-      fi ; \
-      sha256sum -c "${COMPONENT}.tar.gz.sha256" ; \
-      tar -zxf "${COMPONENT}.tar.gz" -C /opt/bitnami --strip-components=2 --no-same-owner ; \
-      rm -rf "${COMPONENT}".tar.gz{,.sha256} ; \
-    done
-RUN apt-get autoremove --purge -y curl && \
-    apt-get update && apt-get upgrade -y && \
+RUN install_packages build-essential ca-certificates curl libssl-dev pkg-config
+RUN mkdir -p /tmp/redis-source /opt/bitnami/redis/bin /opt/bitnami/redis/etc && \
+    curl -fsSL "${REDIS_DOWNLOAD_URL}" -o /tmp/redis.tar.gz && \
+    echo "${REDIS_SHA256}  /tmp/redis.tar.gz" | sha256sum -c - && \
+    tar -xzf /tmp/redis.tar.gz -C /tmp/redis-source --strip-components=1 && \
+    make -C /tmp/redis-source BUILD_TLS=yes -j"$(nproc)" && \
+    install -m 0755 /tmp/redis-source/src/redis-benchmark /opt/bitnami/redis/bin/redis-benchmark && \
+    install -m 0755 /tmp/redis-source/src/redis-check-aof /opt/bitnami/redis/bin/redis-check-aof && \
+    install -m 0755 /tmp/redis-source/src/redis-check-rdb /opt/bitnami/redis/bin/redis-check-rdb && \
+    install -m 0755 /tmp/redis-source/src/redis-cli /opt/bitnami/redis/bin/redis-cli && \
+    install -m 0755 /tmp/redis-source/src/redis-server /opt/bitnami/redis/bin/redis-server && \
+    install -m 0644 /tmp/redis-source/redis.conf /opt/bitnami/redis/etc/redis-default.conf && \
+    rm -rf /tmp/redis-source /tmp/redis.tar.gz
+
+FROM docker.io/library/debian:12-slim
+
+ARG REDIS_VERSION="7.4.3"
+
+LABEL org.opencontainers.image.base.name="docker.io/library/debian:12-slim" \
+      org.opencontainers.image.description="Redis container image maintained from upstream Redis source releases." \
+      org.opencontainers.image.documentation="https://github.com/edijon-ugofresh/containers/tree/main/bitnami/redis/README.md" \
+      org.opencontainers.image.ref.name="${REDIS_VERSION}-debian-12" \
+      org.opencontainers.image.source="https://github.com/edijon-ugofresh/containers/tree/main/bitnami/redis" \
+      org.opencontainers.image.title="redis" \
+      org.opencontainers.image.vendor="edijon-ugofresh" \
+      org.opencontainers.image.version="${REDIS_VERSION}"
+
+ENV HOME="/"
+
+COPY prebuildfs /
+SHELL ["/bin/bash", "-o", "errexit", "-o", "nounset", "-o", "pipefail", "-c"]
+RUN install_packages ca-certificates libgcc-s1 libssl3 libstdc++6 procps
+COPY --from=redis-builder /opt/bitnami/redis /opt/bitnami/redis
+RUN apt-get update && apt-get upgrade -y && \
     apt-get clean && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 RUN chmod g+rwX /opt/bitnami
 RUN find / -perm /6000 -type f -exec chmod a-s {} \; || true
@@ -50,7 +51,7 @@ RUN ln -s /opt/bitnami/scripts/redis/run.sh /run.sh
 
 COPY rootfs /
 RUN /opt/bitnami/scripts/redis/postunpack.sh
-ENV APP_VERSION="7.4.3" \
+ENV APP_VERSION="${REDIS_VERSION}" \
     BITNAMI_APP_NAME="redis" \
     PATH="/opt/bitnami/common/bin:/opt/bitnami/redis/bin:$PATH"
 
