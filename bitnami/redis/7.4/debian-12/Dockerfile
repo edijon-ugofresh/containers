@@ -10,11 +10,13 @@ ARG REDIS_DOWNLOAD_URL="https://download.redis.io/releases/redis-${REDIS_VERSION
 COPY prebuildfs /
 SHELL ["/bin/bash", "-o", "errexit", "-o", "nounset", "-o", "pipefail", "-c"]
 RUN install_packages build-essential ca-certificates curl libssl-dev pkg-config
+# Redis 7.4 enables LTO by default, which breaks amd64 Docker builds when
+# lto-wrapper reuses make's jobserver.
 RUN mkdir -p /tmp/redis-source /opt/bitnami/redis/bin /opt/bitnami/redis/etc && \
     curl -fsSL "${REDIS_DOWNLOAD_URL}" -o /tmp/redis.tar.gz && \
     echo "${REDIS_SHA256}  /tmp/redis.tar.gz" | sha256sum -c - && \
     tar -xzf /tmp/redis.tar.gz -C /tmp/redis-source --strip-components=1 && \
-    make -C /tmp/redis-source BUILD_TLS=yes -j"$(nproc)" && \
+    make -C /tmp/redis-source BUILD_TLS=yes OPT="-O3 -fno-omit-frame-pointer" -j"$(nproc)" && \
     install -m 0755 /tmp/redis-source/src/redis-benchmark /opt/bitnami/redis/bin/redis-benchmark && \
     install -m 0755 /tmp/redis-source/src/redis-check-aof /opt/bitnami/redis/bin/redis-check-aof && \
     install -m 0755 /tmp/redis-source/src/redis-check-rdb /opt/bitnami/redis/bin/redis-check-rdb && \
